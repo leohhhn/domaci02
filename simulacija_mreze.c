@@ -4,6 +4,8 @@
 #include <sys/time.h>
 #include <semaphore.h>
 #include <unistd.h>
+#include <math.h>
+
 
 #define BR_RACUNARA 10
 
@@ -23,35 +25,35 @@ struct magistrala_t {
 
 int wait_time(int noofCol)
 {
-	int base = 2;
-    int result = 1;
-    for (;;)
-    {
-        if (noofCol & 1)
-            result *= base;
-        noofCol >>= 1;
-        if (!noofCol)
-            break;
-        base *= base;
-    }
-    return 2 * (rand() % result);
+
+	int arr[noofCol];
+
+	for(int i = 0	; i < noofCol; i++){
+		arr[i] = pow(2,i);
+	}
+
+	int ret_val = 2 * arr[rand() % noofCol];
+	printf("nofCol: %d - wait time: %d\n", noofCol, ret_val);
+	return ret_val;
+
 }
 
 void* checker_thread(void* args)
 {
 	int total_time = 0;
-	int* ret_val = malloc(4);
+	int ret_val = 0;
+	int *res = malloc(sizeof(int));
 
-	while(total_time < 2)
+	while(total_time < 5)
 	{
-	ret_val += magistrala -> brojac;
-	total_time++;
-	printf("Checker thread proverio %d puta\n", total_time);
-	sleep(1);
+		ret_val += magistrala -> brojac;
+		total_time++;
+		printf("\t\tChecker thread proverio %d puta\n", total_time);
+		sleep(1);
 	}
 
-	pthread_exit((void*) ret_val);
-
+	*res = ret_val;
+	return (void*) res;
 }
 
 void* pc_fun(void* args)
@@ -65,7 +67,6 @@ void* pc_fun(void* args)
 
 	while(1)
 	{
-
 		curr_bus_time = magistrala -> pt;
 		pthread_t transmission_thread;
 
@@ -83,19 +84,20 @@ void* pc_fun(void* args)
 			magistrala -> racunar_id = id;
 			nofCol = 0;
 			magistrala -> brojac++;
-		//	printf("mag_brojac: %d\n rac_id: %d\n", magistrala->brojac, magistrala->racunar_id);
+			//printf("mag_brojac: %d, rac_id: %d\n", magistrala->brojac, magistrala->racunar_id);
+			sem_post(&bus_mutex);
 			// zapocni transmisiju
 			usleep(10000);
 			// oslobodi magistralu
 			magistrala -> racunar_id = 0;
-			sem_post(&bus_mutex);
+
 		}
 		else if((magistrala->racunar_id != 0) && (vreme - curr_bus_time >= 2000))
 		{ // ako je magistrala zauzeta ali nije kolizija
 			nofCol = 0;
+			sem_post(&bus_mutex);
 			// sacekaj svoj red, 10ms
 			usleep(10000);
-			sem_post(&bus_mutex);
 			continue; // idi ispocetka while
 		} else {
 			// ako je kolizija
@@ -103,6 +105,8 @@ void* pc_fun(void* args)
 				nofCol++;
 			else
 				nofCol = 10;
+
+			printf("Kolizija! Racunar %d staje i ceka %dms\n", id, wait_time(nofCol));
 			// cekaj eksponencijalno po nofCol
 			sem_post(&bus_mutex);
 			usleep(wait_time(nofCol));
@@ -111,8 +115,6 @@ void* pc_fun(void* args)
 		usleep(1000 * (51 + rand() % 100)); // cekaj nasumicno 50ms - 150ms
 	}
 }
-
-
 
 int main(){
 
@@ -134,9 +136,11 @@ int main(){
 	pthread_create(&checker, NULL, checker_thread, NULL);
 	int* res;
 
-	pthread_join(checker, (void*) res);
-	res = (int*) res;
-	printf("res: %d", *res);
+	pthread_join(checker, (void**) &res);
+
+	double iskoriscenost = (*res) / 6000.0;
+
+	printf("\nIskoriscenost mreze: %f\n", iskoriscenost);
 //	printf("Broj prenetih paketa bez kolizije: %d\nIskoriscenost mreze: %d\n", /6000);
 
 	exit(0);
