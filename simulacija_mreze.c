@@ -9,6 +9,7 @@
 
 #define BR_RACUNARA 10
 
+pthread_mutex_t mutex;
 sem_t bus_mutex;
 time_t t;
 struct timeval tv;
@@ -21,20 +22,14 @@ struct magistrala_t {
 	int pt;			// početak transmisije u mikrosekundama
 	int racunar_id; 	// id računara koji je počeo transmisiju
 	int brojac; 	// brojač okvira prenetih bez prekida kroz mrežu
+	int trenutni_broj;
 };
 
 int wait_time(int noofCol, int pc_id)
 {
-
-	int arr[noofCol];
-
-	for(int i = 0	; i < noofCol; i++){
-		arr[i] = pow(2,i);
-	}
-
-	int ret_val = 2 * arr[rand() % noofCol];
-	printf("pozvao racunar id %d - nofCol: %d - wait time: %d\n", pc_id, noofCol, ret_val);
-	return ret_val;
+	int n = pow(2,noofCol);
+	//	printf("pozvao racunar id %d - nofCol: %d - wait time: %d\n", pc_id, noofCol, ret_val);
+	return 2 * (rand() % n);
 
 }
 
@@ -44,9 +39,12 @@ void* checker_thread(void* args)
 	int ret_val = 0;
 	int *res = malloc(sizeof(int));
 
-	while(total_time < 60)
+	while(total_time < 5)
 	{
-		ret_val += magistrala -> brojac;
+		ret_val += magistrala -> trenutni_broj > magistrala -> brojac ?
+		 			magistrala -> trenutni_broj : magistrala -> brojac;
+		magistrala -> brojac = 0;
+		magistrala -> trenutni_broj = 0;
 		total_time++;
 		printf("\t\tChecker thread proverio %d puta\n", total_time);
 		sleep(1);
@@ -68,52 +66,68 @@ void* pc_fun(void* args)
 	while(1)
 	{
 		curr_bus_time = magistrala -> pt;
-
 		// pokusaj da zauzmes upis u vreme magistrale
-		sem_wait(&bus_mutex);
+
+		//sem_wait(&bus_mutex);
 
 		gettimeofday(&tv , NULL);
 		int vreme = tv.tv_usec; // trenutno vreme u ms
 
+		//printf("vremena: %d %d %d\n", vreme, curr_bus_time, magistrala -> racunar_id);
 		if(magistrala -> racunar_id == 0)
 		{
-
+			pthread_mutex_lock(&mutex);
 			// ako je magistrala prazna .. da li se u koliziji oba racunara prekidaju?
 			// upisi podatke
 			magistrala -> pt = vreme;
 			magistrala -> racunar_id = id;
 			nofCol = 0;
-			magistrala -> brojac++;
+			magistrala -> trenutni_broj++;
 			//printf("mag_brojac: %d, rac_id: %d\n", magistrala->brojac, magistrala->racunar_id);
 			// zapocni transmisiju
+			pthread_mutex_unlock(&mutex);
 			usleep(10000);
+			pthread_mutex_lock(&mutex);
 			// oslobodi magistralu
 			magistrala -> racunar_id = 0;
-			sem_post(&bus_mutex); 	// thread mora da pusti magistralu kada zavrsi prenos
-									// ali mutex se pusti sam kada se ide na sleep?
+			pthread_mutex_unlock(&mutex);
+			//sem_post(&bus_mutex);
 
+			//printf("spava %d\n", sleep_time);
 		}
-		else if((magistrala->racunar_id != 0) && (vreme - curr_bus_time >= 2000))
+		else if((magistrala->racunar_id != 0) && vreme - curr_bus_time >= 2000)
 		{ // ako je magistrala zauzeta ali nije kolizija
 			nofCol = 0;
-			sem_post(&bus_mutex);
 			// sacekaj svoj red, 10ms
+			//pthread_mutex_unlock(&mutex);
 			usleep(10000);
-			continue; // idi ispocetka while
+
+			//sem_post(&bus_mutex);
+		//	printf("cekanje sa %d i %d\n", vreme, curr_bus_time);
+			//continue; // idi ispocetka while
 		} else {
 			// ako je kolizija
 			if(nofCol < 10)
 				nofCol++;
 			else
 				nofCol = 10;
+			pthread_mutex_lock(&mutex);
+			if(magistrala -> brojac < magistrala -> trenutni_broj)
+				magistrala -> brojac = magistrala -> trenutni_broj;
+			magistrala -> trenutni_broj = 0;
+
+			// cekaj eksponencijalno po nofCol
+			pthread_mutex_unlock(&mutex);
 			int cekanje = wait_time(nofCol, id);
 			printf("Kolizija! Racunar %d staje i ceka %dms\n", id, cekanje);
-			// cekaj eksponencijalno po nofCol
-			sem_post(&bus_mutex);
 			usleep(cekanje * 1000); // wait_time vraca vreme u ms
+
+			//sem_post(&bus_mutex);
 		}
 
-		usleep(1000 * (51 + rand() % 100)); // cekaj nasumicno 50ms - 150ms
+		int sleep_time = (51 + (rand() % 100));
+
+		usleep(1000 * sleep_time); // cekaj nasumicno 50ms - 150ms
 	}
 }
 
@@ -123,7 +137,9 @@ int main(){
 
 	magistrala = (struct magistrala_t*) malloc(sizeof(struct magistrala_t));
 	magistrala -> racunar_id = 0;
+	magistrala -> trenutni_broj = 0;
 
+	pthread_mutex_init(&mutex, NULL);
 	sem_init(&bus_mutex, 0, 1);
 	pthread_t threads[BR_RACUNARA];
 	pthread_t checker;
@@ -139,7 +155,7 @@ int main(){
 
 	pthread_join(checker, (void**) &res);
 
-	double iskoriscenost = (*res) / 6000.0;
+	double iskoriscenost = (*res) / 500.0;
 
 //	printf("\nIskoriscenost mreze: %f\n", iskoriscenost);
 	printf("Broj prenetih paketa bez kolizije: %d\nIskoriscenost mreze: %f\n", *res, iskoriscenost);
