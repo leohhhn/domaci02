@@ -89,18 +89,29 @@ void* pc_fun(void* args)
 		//printf("vremena: %d %d %d\n", vreme, curr_bus_time, magistrala -> racunar_id);
 		if(magistrala -> racunar_id == 0)
 		{
+			int izasao = 0;
 			pthread_mutex_lock(&mutex);
 			// upisi podatke
 			magistrala -> pt = vreme;
 			magistrala -> racunar_id = id;
 			nofCol = 0;
+<<<<<<< HEAD
 			pthread_mutex_unlock(&mutex);
+=======
+>>>>>>> 6aadecffe06858f84432f4da245410b07c1e6ed9
 
 			// zapocni transmisiju
+<<<<<<< HEAD
+=======
+
+			pthread_mutex_unlock(&mutex);
+
+>>>>>>> 6aadecffe06858f84432f4da245410b07c1e6ed9
 			for(int i = 0; i < 1000; i++)
 			{
 				// granulisi sleep da proveravas da li si upao u koliziju
 				if(collision_happened && pc_id_coll == id)
+<<<<<<< HEAD
 				{
 					izasao = 1;
 					break;
@@ -134,6 +145,29 @@ void* pc_fun(void* args)
 			pthread_mutex_lock(&mutex);
 			magistrala -> brojac++;
 			magistrala -> racunar_id = 0; // oslobodi magistralu
+=======
+					break;
+				usleep(10);
+			}
+
+			pthread_mutex_lock(&mutex);
+			magistrala -> racunar_id = 0; // oslobodi magistralu
+			pthread_mutex_unlock(&mutex);
+
+			if(izasao)	{
+				pthread_mutex_lock(&mutex);
+				collision_happened = 0;
+				pc_id_coll = 0;
+				pthread_mutex_unlock(&mutex);
+				continue;
+			}
+
+			int sleep_time = (51 + (rand() % 100));
+			usleep(1000 * sleep_time); // cekaj nasumicno 50ms - 150ms
+
+			pthread_mutex_lock(&mutex);
+			magistrala -> brojac++;
+>>>>>>> 6aadecffe06858f84432f4da245410b07c1e6ed9
 			pthread_mutex_unlock(&mutex);
 
 			//sem_post(&bus_mutex);
@@ -144,7 +178,11 @@ void* pc_fun(void* args)
 			nofCol = 0;
 			// sacekaj svoj red, 10ms
 			usleep(10000);
+<<<<<<< HEAD
 			//printf("komp %d ceka, razlika: %d\n", id, vreme - curr_bus_time);
+=======
+			//	printf("cekanje sa %d i %d\n", vreme, curr_bus_time);
+>>>>>>> 6aadecffe06858f84432f4da245410b07c1e6ed9
 		} else {
 			// ako je cista kolizija
 			if(nofCol < 10)
@@ -187,10 +225,17 @@ int main(){
 	int* res;
 
 	pthread_join(checker, (void**) &res);
+<<<<<<< HEAD
 	double iskoriscenost = (*res) / 500.0;
 
 	//printf("\nIskoriscenost mreze: %f\n", iskoriscenost);
 	printf("Broj prenetih paketa kroz mrezu: %d\nIskoriscenost mreze: %d%\n", *res, (int) round(iskoriscenost * 100));
+=======
+	double iskoriscenost = (*res) / 6000.0;
+
+	//printf("\nIskoriscenost mreze: %f\n", iskoriscenost);
+	printf("Broj prenetih paketa bez kolizije: %d\nIskoriscenost mreze: %d%\n", *res, (int) round(iskoriscenost * 100));
+>>>>>>> 6aadecffe06858f84432f4da245410b07c1e6ed9
 
 	//printf("max cekanje ikad: %d", max_Col_wait_time);
 	exit(0);
