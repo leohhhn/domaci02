@@ -16,6 +16,8 @@ TODOs:
 int collision_happened = 0;
 int pc_id_coll = 0;
 
+int test_mode = 0;
+
 pthread_mutex_t mutex;
 time_t t;
 struct timeval tv;
@@ -50,8 +52,14 @@ void* checker_thread(void* args)
 	int total_time = 0;
 	int ret_val = 0;
 	int *res = malloc(sizeof(int));
+	int run_time = 60;
 
-	while(total_time < 5)
+	if(test_mode == 0)
+		run_time = 60;
+	else
+		run_time = 5;
+
+	while(total_time < run_time)
 	{
 		pthread_mutex_lock(&mutex);
 		ret_val += magistrala -> brojac;
@@ -59,7 +67,7 @@ void* checker_thread(void* args)
 		pthread_mutex_unlock(&mutex);
 
 		total_time++;
-		printf("\t\tChecker thread proverio %d puta\n", total_time);
+		printf("\t\tChecker thread proverio %d puta, ret_val = %d\n", total_time, ret_val);
 		sleep(1);
 	}
 
@@ -118,7 +126,7 @@ void* pc_fun(void* args)
 				izasao = 0;
 
 				if(nofCol < 10)
-					nofCol++;
+					nofCol++;   // YIKESSSSSSSSSS
 				else
 					nofCol = 10;
 
@@ -137,8 +145,6 @@ void* pc_fun(void* args)
 			magistrala -> racunar_id = 0; // oslobodi magistralu
 			pthread_mutex_unlock(&mutex);
 
-
-			
 			//sem_post(&bus_mutex);
 			//printf("spava %d\n", sleep_time);
 		}
@@ -190,7 +196,11 @@ int main(){
 	int* res;
 
 	pthread_join(checker, (void**) &res);
-	double iskoriscenost = (*res) / 500.0;
+	double iskoriscenost = 0;
+	if(test_mode == 0)
+	 	iskoriscenost = (*res) / 6000.0;
+	else
+		iskoriscenost = (*res) / 500.0;
 
 	//printf("\nIskoriscenost mreze: %f\n", iskoriscenost);
 	printf("Broj prenetih paketa kroz mrezu: %d\nIskoriscenost mreze: %d%\n", *res, (int) round(iskoriscenost * 100));
