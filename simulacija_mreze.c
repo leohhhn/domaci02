@@ -10,17 +10,13 @@
 
 /*
 TODOs:
-
 	- resiti problem sa rolloverom u vremenu
-	- oba racunara moraju da prestanu transmisiju ako je Kolizija
-	- cekanje od 50ms do 100ms pocinje od pocetka uspesne transmisije
-	- mag.brojac nije zaredom uspesne, nego samo ukupno uspesnih prenosa unutar jedne sekunde
-
 */
 
+int collision_happened = 0;
+int pc_id_coll = 0;
 
 pthread_mutex_t mutex;
-sem_t bus_mutex;
 time_t t;
 struct timeval tv;
 struct magistrala_t* magistrala;
@@ -33,7 +29,6 @@ struct magistrala_t {
 	int pt;			// početak transmisije u mikrosekundama
 	int racunar_id; 	// id računara koji je počeo transmisiju
 	int brojac; 	// brojač okvira prenetih bez prekida kroz mrežu
-	int trenutni_broj;
 };
 
 int wait_time(int noofCol, int pc_id)
@@ -56,12 +51,13 @@ void* checker_thread(void* args)
 	int ret_val = 0;
 	int *res = malloc(sizeof(int));
 
-	while(total_time < 60)
+	while(total_time < 5)
 	{
-		ret_val += magistrala -> trenutni_broj > magistrala -> brojac ?
-		 			magistrala -> trenutni_broj : magistrala -> brojac;
+		pthread_mutex_lock(&mutex);
+		ret_val += magistrala -> brojac;
 		magistrala -> brojac = 0;
-		magistrala -> trenutni_broj = 0;
+		pthread_mutex_unlock(&mutex);
+
 		total_time++;
 		printf("\t\tChecker thread proverio %d puta\n", total_time);
 		sleep(1);
@@ -77,7 +73,7 @@ void* pc_fun(void* args)
 // racunari ce pokusavati da posalju okvire dok im thread_checker ne kaze da su poslali sve sto treba
 
 	int id = *((int *) args);
-	int curr_bus_time;
+	int curr_bus_time = 0;
 	int nofCol = 0; // br uzastopnih kolizija
 
 	while(1)
@@ -88,64 +84,85 @@ void* pc_fun(void* args)
 
 		gettimeofday(&tv , NULL);
 		int vreme = tv.tv_usec; // trenutno vreme u ms
+		int izasao = 0;
 
 		//printf("vremena: %d %d %d\n", vreme, curr_bus_time, magistrala -> racunar_id);
 		if(magistrala -> racunar_id == 0)
 		{
 			pthread_mutex_lock(&mutex);
-			// ako je magistrala prazna .. da li se u koliziji oba racunara prekidaju?
 			// upisi podatke
-
 			magistrala -> pt = vreme;
 			magistrala -> racunar_id = id;
 			nofCol = 0;
-			magistrala -> trenutni_broj++;
-
-			//printf("mag_brojac: %d, rac_id: %d\n", magistrala->brojac, magistrala->racunar_id);
-			// zapocni transmisiju
-
 			pthread_mutex_unlock(&mutex);
-			usleep(10000);
+
+			// zapocni transmisiju
+			for(int i = 0; i < 1000; i++)
+			{
+				// granulisi sleep da proveravas da li si upao u koliziju
+				if(collision_happened && pc_id_coll == id)
+				{
+					izasao = 1;
+					break;
+				}
+				usleep(10);
+			}
+
+			if(izasao)	{
+				pthread_mutex_lock(&mutex);
+				magistrala -> racunar_id = 0; // skidaj se sa magistrale jer si u koliziji
+				collision_happened = 0; // resetuj da li se kolizija desila
+				pc_id_coll = 0; // resetuj ID
+				pthread_mutex_unlock(&mutex);
+				izasao = 0;
+
+				if(nofCol < 10)
+					nofCol++;
+				else
+					nofCol = 10;
+
+				// cekaj eksponencijalno po nofCol
+				int cekanje = wait_time(nofCol, id);
+				printf("Imposed Kolizija! Racunar %d staje i ceka %dms\n", id, cekanje);
+				usleep(cekanje * 1000); // wait_time vraca vreme u ms
+
+			}
+
+			int sleep_time = 1000 * (51 + (rand() % 100));
+			usleep(sleep_time); // cekaj nasumicno 50ms - 150ms
 
 			pthread_mutex_lock(&mutex);
-			// oslobodi magistralu
-			magistrala -> racunar_id = 0;
-
+			magistrala -> brojac++;
+			magistrala -> racunar_id = 0; // oslobodi magistralu
 			pthread_mutex_unlock(&mutex);
 
 			//sem_post(&bus_mutex);
 			//printf("spava %d\n", sleep_time);
 		}
-		else if((magistrala->racunar_id != 0) && vreme - curr_bus_time >= 2000)
+		else if((magistrala->racunar_id != 0) && vreme - curr_bus_time >= 2000) // nije dobar uslov za 2k
 		{ // ako je magistrala zauzeta ali nije kolizija
 			nofCol = 0;
 			// sacekaj svoj red, 10ms
-			//pthread_mutex_unlock(&mutex);
 			usleep(10000);
-
-			//sem_post(&bus_mutex);
-			//	printf("cekanje sa %d i %d\n", vreme, curr_bus_time);
-			//continue; // idi ispocetka while
+			//printf("komp %d ceka, razlika: %d\n", id, vreme - curr_bus_time);
 		} else {
-			// ako je kolizija
+			// ako je cista kolizija
 			if(nofCol < 10)
 				nofCol++;
 			else
 				nofCol = 10;
+
 			pthread_mutex_lock(&mutex);
-			if(magistrala -> brojac < magistrala -> trenutni_broj)
-				magistrala -> brojac = magistrala -> trenutni_broj;
-			magistrala -> trenutni_broj = 0;
-			// cekaj eksponencijalno po nofCol
+			collision_happened = 1;
+			pc_id_coll = magistrala -> racunar_id;
 			pthread_mutex_unlock(&mutex);
+
+			// cekaj eksponencijalno po nofCol
 			int cekanje = wait_time(nofCol, id);
-			//printf("Kolizija! Racunar %d staje i ceka %dms\n", id, cekanje);
+			printf("Kolizija sa racunarom %d! Racunar %d staje i ceka %dms\n", pc_id_coll, id, cekanje);
 			usleep(cekanje * 1000); // wait_time vraca vreme u ms
 			//sem_post(&bus_mutex);
 		}
-
-		int sleep_time = (51 + (rand() % 100));
-		usleep(1000 * sleep_time); // cekaj nasumicno 50ms - 150ms
 	}
 }
 
@@ -155,10 +172,8 @@ int main(){
 
 	magistrala = (struct magistrala_t*) malloc(sizeof(struct magistrala_t));
 	magistrala -> racunar_id = 0;
-	magistrala -> trenutni_broj = 0;
 
 	pthread_mutex_init(&mutex, NULL);
-	sem_init(&bus_mutex, 0, 1);
 	pthread_t threads[BR_RACUNARA];
 	pthread_t checker;
 	int ids[BR_RACUNARA];
@@ -172,12 +187,11 @@ int main(){
 	int* res;
 
 	pthread_join(checker, (void**) &res);
+	double iskoriscenost = (*res) / 500.0;
 
-	double iskoriscenost = (*res) / 6000.0;
+	//printf("\nIskoriscenost mreze: %f\n", iskoriscenost);
+	printf("Broj prenetih paketa kroz mrezu: %d\nIskoriscenost mreze: %d%\n", *res, (int) round(iskoriscenost * 100));
 
-//	printf("\nIskoriscenost mreze: %f\n", iskoriscenost);
-	printf("Broj prenetih paketa bez kolizije: %d\nIskoriscenost mreze: %f\n", *res, iskoriscenost);
-
-	printf("max cekanje ikad: %d", max_Col_wait_time);
+	//printf("max cekanje ikad: %d", max_Col_wait_time);
 	exit(0);
 }
