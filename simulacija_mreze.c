@@ -13,19 +13,18 @@ TODOs:
 	- resiti problem sa rolloverom u vremenu
 */
 
-int collision_happened = 0;
-int pc_id_coll = 0;
-
-int test_mode = 0;
-
 pthread_mutex_t mutex;
+pthread_mutex_t global;
 time_t t;
 struct timeval tv;
 struct magistrala_t* magistrala;
-
-int max_Col_wait_time = 0;
 void* checker_thread(void* args);
 void* pc_fun(void* args);
+
+int collision_happened = 0;
+int pc_id_coll = 0;
+int test_mode = 1;
+int max_Col_wait_time = 0;
 
 struct magistrala_t {
 	int pt;			// početak transmisije u mikrosekundama
@@ -35,7 +34,7 @@ struct magistrala_t {
 
 int wait_time(int noofCol, int pc_id)
 {
-	int n = pow(2,noofCol);
+	int n = pow(2, noofCol);
 	int t = 2 * (rand() % n);
 
 	if(t > max_Col_wait_time) // gleda koliko je max exponencijalno vreme cekano bilo za sve racunare
@@ -89,23 +88,23 @@ void* pc_fun(void* args)
 		curr_bus_time = magistrala -> pt;
 		// pokusaj da zauzmes upis u vreme magistrale
 		//sem_wait(&bus_mutex);
+		int izasao = 0;
 
 		gettimeofday(&tv , NULL);
 		int vreme = tv.tv_usec; // trenutno vreme u ms
-		int izasao = 0;
 
 		//printf("vremena: %d %d %d\n", vreme, curr_bus_time, magistrala -> racunar_id);
 		if(magistrala -> racunar_id == 0)
 		{
-			int izasao = 0;
 			pthread_mutex_lock(&mutex);
 			// upisi podatke
 			magistrala -> pt = vreme;
 			magistrala -> racunar_id = id;
-			nofCol = 0;
 			pthread_mutex_unlock(&mutex);
+			nofCol = 0;
 
-			// zapocni transmisiju
+			// 	zapocni transmisiju
+			//	printf("racunar %d zapoceo transmisiju\n", id);
 			for(int i = 0; i < 1000; i++)
 			{
 				// granulisi sleep da proveravas da li si upao u koliziju
@@ -118,11 +117,11 @@ void* pc_fun(void* args)
 			}
 
 			if(izasao)	{
-				pthread_mutex_lock(&mutex);
+				pthread_mutex_lock(&global);
 				magistrala -> racunar_id = 0; // skidaj se sa magistrale jer si u koliziji
 				collision_happened = 0; // resetuj da li se kolizija desila
 				pc_id_coll = 0; // resetuj ID
-				pthread_mutex_unlock(&mutex);
+				pthread_mutex_unlock(&global);
 				izasao = 0;
 
 				if(nofCol < 10)
@@ -134,23 +133,23 @@ void* pc_fun(void* args)
 				int cekanje = wait_time(nofCol, id);
 				printf("Imposed Kolizija! Racunar %d staje i ceka %dms\n", id, cekanje);
 				usleep(cekanje * 1000); // wait_time vraca vreme u ms
-
+				continue;
 			}
-
-			int sleep_time = 1000 * (51 + (rand() % 100));
-			usleep(sleep_time); // cekaj nasumicno 50ms - 150ms
 
 			pthread_mutex_lock(&mutex);
 			magistrala -> brojac++;
 			magistrala -> racunar_id = 0; // oslobodi magistralu
 			pthread_mutex_unlock(&mutex);
 
+			int sleep_time = 1000 * (51 + (rand() % 100));
+			usleep(sleep_time); // cekaj nasumicno 50ms - 150ms
+
 			//sem_post(&bus_mutex);
 			//printf("spava %d\n", sleep_time);
 		}
-		else if((magistrala->racunar_id != 0) && vreme - curr_bus_time >= 2000) // nije dobar uslov za 2k
+		else if((magistrala->racunar_id != 0) && abs(vreme - curr_bus_time) >= 2000) // nije dobar uslov za 2k
 		{ // ako je magistrala zauzeta ali nije kolizija
-			nofCol = 0;
+			nofCol = 0; // da li ovde treba resetovati nofCol?
 			// sacekaj svoj red, 10ms
 			usleep(10000);
 			//printf("komp %d ceka, razlika: %d\n", id, vreme - curr_bus_time);
@@ -161,10 +160,10 @@ void* pc_fun(void* args)
 			else
 				nofCol = 10;
 
-			pthread_mutex_lock(&mutex);
-			collision_happened = 1;
+			pthread_mutex_lock(&global);
 			pc_id_coll = magistrala -> racunar_id;
-			pthread_mutex_unlock(&mutex);
+			collision_happened = 1;
+			pthread_mutex_unlock(&global);
 
 			// cekaj eksponencijalno po nofCol
 			int cekanje = wait_time(nofCol, id);
@@ -183,6 +182,7 @@ int main(){
 	magistrala -> racunar_id = 0;
 
 	pthread_mutex_init(&mutex, NULL);
+	pthread_mutex_init(&global, NULL);
 	pthread_t threads[BR_RACUNARA];
 	pthread_t checker;
 	int ids[BR_RACUNARA];
@@ -194,8 +194,8 @@ int main(){
 
 	pthread_create(&checker, NULL, checker_thread, NULL);
 	int* res;
-
 	pthread_join(checker, (void**) &res);
+
 	double iskoriscenost = 0;
 	if(test_mode == 0)
 	 	iskoriscenost = (*res) / 6000.0;
@@ -205,6 +205,6 @@ int main(){
 	//printf("\nIskoriscenost mreze: %f\n", iskoriscenost);
 	printf("Broj prenetih paketa kroz mrezu: %d\nIskoriscenost mreze: %d%\n", *res, (int) round(iskoriscenost * 100));
 
-	//printf("max cekanje ikad: %d", max_Col_wait_time);
+	printf("max cekanje ikad: %d\n", max_Col_wait_time);
 	exit(0);
 }
