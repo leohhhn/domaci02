@@ -35,15 +35,12 @@ int wait_time(int noofCol, int pc_id)
 	if(t > max_Col_wait_time) // gleda koliko je max exponencijalno vreme cekano bilo za sve racunare
 		max_Col_wait_time = t;
 
-	//	printf("pozvao racunar id %d - nofCol: %d - wait time: %d\n", pc_id, noofCol, ret_val);
-	//printf("max cekanje za komp id %d je %d\n", pc_id, n);
-
 	return t;
 }
 
 void* checker_thread(void* args)
 {
-	int total_time = 0;
+	int total_time = 0; // 60 sekundi
 	int ret_val = 0;
 	int *res = malloc(sizeof(int));
 	int run_time = 60;
@@ -59,8 +56,8 @@ void* checker_thread(void* args)
 		ret_val += magistrala -> brojac;
 		magistrala -> brojac = 0;
 		pthread_mutex_unlock(&mutex);
+		printf("Time elapsed: %ds\n", total_time + 1);
 		total_time++;
-	//	printf("\t\tChecker thread proverio %d puta, ret_val = %d\n", total_time, ret_val);
 		sleep(1);
 	}
 
@@ -70,17 +67,15 @@ void* checker_thread(void* args)
 
 void* pc_fun(void* args)
 {
-// funkcija za svaki thread/racunar
-// racunari ce pokusavati da posalju okvire dok im thread_checker ne kaze da su poslali sve sto treba
+	// funkcija za svaki thread/racunar
 
 	int id = *((int *) args);
-	int curr_bus_time = 0;
+	int curr_bus_time = 0; // vreme procitano sa magistrale
 	int nofCol = 0; // br uzastopnih kolizija
 
 	while(1)
 	{
 		int izasao = 0;
-
 		gettimeofday(&tv , NULL);
 
 		long int vreme_usec = tv.tv_usec; // trenutno vreme u mikrosekundama
@@ -88,25 +83,20 @@ void* pc_fun(void* args)
 		long int real_time_usec = vreme_sec * 1000000 + vreme_usec;
 		curr_bus_time = magistrala -> pt;
 
-		//printf("real_time_usec: %d, curr_bus_time: %d\n", real_time_usec,curr_bus_time);
-		//break;
-		//printf("razlika vremena: %d\n", abs(real_time_usec - curr_bus_time));
-
-
 		if(magistrala -> racunar_id == 0)
-		{
+		{ // ako je magistrala slobodna
+
 			pthread_mutex_lock(&mutex);
-			// upisi podatke
+			// upisi podatke u magistralu
 			magistrala -> pt = real_time_usec;
 			magistrala -> racunar_id = id;
 			pthread_mutex_unlock(&mutex);
 			nofCol = 0;
 
 			// 	zapocni transmisiju
-			//	printf("racunar %d zapoceo transmisiju\n", id);
 			for(int i = 0; i < 100; i++)
 			{
-				// granulisi sleep da proveravas da li si upao u koliziju
+				// granulisi sleep da bi proveravao da li si upao u imposed koliziju
 				if(collision_happened && pc_id_coll == id)
 				{
 					izasao = 1;
@@ -124,7 +114,7 @@ void* pc_fun(void* args)
 				izasao = 0;
 
 				if(nofCol < 10)
-					nofCol++;   // YIKESSSSSSSSSS
+					nofCol++;
 				else
 					nofCol = 10;
 
@@ -141,19 +131,14 @@ void* pc_fun(void* args)
 			pthread_mutex_unlock(&mutex);
 
 			int sleep_time = 1000 * (51 + (rand() % 100));
-			usleep(sleep_time); // cekaj nasumicno 50ms - 150ms
-
-			//sem_post(&bus_mutex);
-			//printf("spava %d\n", sleep_time);
+			usleep(sleep_time); // cekaj nasumicno 50ms - 150ms;
 		}
 		else if((magistrala->racunar_id != 0) && (abs(real_time_usec - curr_bus_time) >= 2000))
 		{
-		// 	printf("razlika vremena: %d\n", abs(real_time_usec - curr_bus_time));
 			// ako je magistrala zauzeta ali nije kolizija
 			nofCol = 0;
 			// sacekaj svoj red, 10ms
 			usleep(10000);
-	//		printf("komp %d ceka, razlika: %d\n", id, real_time_usec - curr_bus_time);
 		} else {
 			// ako je cista kolizija
 			if(nofCol < 10)
@@ -202,9 +187,7 @@ int main(){
 	else
 		iskoriscenost = (*res) / 500.0;
 
-	//printf("\nIskoriscenost mreze: %f\n", iskoriscenost);
 	printf("Broj prenetih paketa kroz mrezu: %d\nIskoriscenost mreze: %d%\n", *res, (int) (iskoriscenost * 100));
-
-	printf("max cekanje ikad: %d\n", max_Col_wait_time);
+	printf("Najduze cekanje: %d\n", max_Col_wait_time);
 	exit(0);
 }
